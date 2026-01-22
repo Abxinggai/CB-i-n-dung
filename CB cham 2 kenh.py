@@ -1,169 +1,90 @@
-# =================================================================
-# 📘 HDSD HỆ THỐNG ĐIỀU KHIỂN GẦM BÀN V9 (Final Lock Edition):
-# Chắc là đồng
-# 🟢 TẦNG A (Miếng đồng bên A - GIẢI TRÍ):
-#   - 1 chạm: Dừng / Phát nhạc (Play/Pause).
-#   - 2 chạm: Quay lại bài trước đó (Previous Track).
-#   - 3 chạm: Tắt / Bật tiếng hệ thống (Mute/Unmute).
-#   - 4 chạm: CHUYỂN SANG TẦNG B (Hệ thống).
-#   - Giữ 1s: Chuyển bài tiếp theo (Next Track).
-#
-# 🔴 TẦNG B (Miếng đồng bên B - HỆ THỐNG):
-#   - 1 chạm: Tăng âm lượng (Volume Up).
-#   - 2 chạm: Giảm âm lượng (Volume Down).
-#   - 3 chạm: Mở Web Bí mật (Tab ẩn danh trình duyệt Edge).
-#   - 4 chạm: QUAY LẠI TẦNG A (Giải trí).
-#   - Giữ 1s: KHÓA MÀN HÌNH MÁY TÍNH (Win + L).
-#
-# ⚡ LƯU Ý: 
-#   - Phải chạy phần mềm với quyền ADMINISTRATOR.
-#   - Nếu Spotify chưa mở, chạm bất kỳ ở Tầng A sẽ tự khởi động Playlist.
-#   - Nếu rút Arduino, code đợi 30s để bạn cắm lại trước khi tự đóng.
-# =================================================================
+"""
+🚀 UNDER-DESK SPOTIFY CONTROLLER V9 (Final)
+HDSD:
+  Kênh A (Nhạc): 1-Play/Pause | 2-Back | 3-Mute | 4-Sang Kênh B | Giữ 1s-Next
+  Kênh B (Hệ thống): 1-Vol Up | 2-Vol Down | 3-Incognito Web | 4-Về Kênh A | Giữ 1s-Win+L (Lock)
+Note: Chạy quyền Administrator để các lệnh hệ thống hoạt động.
+"""
 
-import serial,json,time,os,pyautogui,subprocess,sys,ctypes
+import serial, json, time, os, pyautogui, subprocess, sys, ctypes
 
-# --- CẤU HÌNH HỆ THỐNG ---
-COM_PORT = 'COM5'# tùy vào COM của bn
-BAUD_RATE = 115200
-THRESHOLD_A = 4000
-THRESHOLD_B = 6000 
-SECRET_URL = "vietjack.com" # Web bí mật của bạn
-PLAYLIST_ID = "37i9dQZF1DXcBWIGoYBMm1" # <--- CHỈ ĐỂ MÃ ID PLAYLIST
-DISCONNECT_TIMEOUT = 30 
-TAP_WINDOW = 0.6          
-LONG_PRESS_TIME = 3.0     
+# --- CẤU HÌNH ---
+COM_PORT = 'COM5'
+BAUD = 115200
+THRESHOLD = {'A': 4000, 'B': 6000}
+ID_PLAYLIST = "37i9dQZF1DXcBWIGoYBMm1"
+SECRET_URL = "https://www.google.com"
 
-# Vô hiệu hóa bảo vệ góc màn hình
 pyautogui.FAILSAFE = False
 
-def is_spotify_running():
-    """Kiểm tra xem Spotify có đang chạy hay không"""
-    process = subprocess.getoutput('tasklist /FI "IMAGENAME eq Spotify.exe"')
-    return "spotify.exe" in process.lower()
+def trigger(act, ser):
+    print(f"Action: {act}")
+    # Logic Mở Spotify
+    if act.startswith("A") and act != "GO_TO_B" and "spotify.exe" not in subprocess.getoutput('tasklist').lower():
+        os.startfile(f"spotify:playlist:{ID_PLAYLIST}")
+        time.sleep(7); pyautogui.press('playpause'); return
 
-def trigger_action(action, ser):
-    """Thực thi các lệnh điều khiển máy tính"""
-    print(f"\n🎬 [HÀNH ĐỘNG]: {action}")
-    
-    # 1. Logic tự mở Spotify nếu chưa có
-    if action.startswith("A") and action != "GO_TO_B" and not is_spotify_running():
-        print(f"🚀 Khởi động Spotify Playlist: {PLAYLIST_ID}")
-        # Dùng os.startfile để gọi đúng giao thức Spotify trên Windows
-        os.startfile(f"spotify:playlist:{PLAYLIST_ID}")
-        time.sleep(7) # Đợi App load xong 300 bài
-        pyautogui.press('playpause')
-        return
+    # Mapping lệnh
+    cmds = {
+        "A1": lambda: pyautogui.press('playpause'),
+        "A2": lambda: pyautogui.press('prevtrack'),
+        "A3": lambda: pyautogui.press('volumemute'),
+        "AHOLD": lambda: pyautogui.press('nexttrack'),
+        "GO_TO_B": lambda: ser.write(b'B'),
+        "B1": lambda: pyautogui.press('volumeup'),
+        "B2": lambda: pyautogui.press('volumedown'),
+        "B3": lambda: subprocess.Popen(f"start msedge --inprivate {SECRET_URL}", shell=True),
+        "BHOLD": lambda: ctypes.windll.user32.LockWorkStation(),
+        "GO_TO_A": lambda: ser.write(b'A')
+    }
+    if act in cmds: cmds[act]()
 
-    # 2. Xử lý các lệnh TẦNG A
-    if action == "A1": pyautogui.press('playpause')
-    elif action == "A2": pyautogui.press('prevtrack')
-    elif action == "A3": pyautogui.press('volumemute')
-    elif action == "AHOLD": pyautogui.press('nexttrack')
-    elif action == "GO_TO_B":
-        print("🔑 Đã sang TẦNG B (Hệ thống)"); ser.write(b'B')
-
-    # 3. Xử lý các lệnh TẦNG B
-    elif action == "B1": pyautogui.press('volumeup')
-    elif action == "B2": pyautogui.press('volumedown')
-    elif action == "B3": 
-        print("🕵️‍♂️ Mở Tab ẩn danh..."); subprocess.Popen(f"start msedge --inprivate {SECRET_URL}", shell=True)
-    elif action == "BHOLD":
-        print("🔒 Đang khóa máy (Win + L)...")
-        ser.write(b'A') # Luôn đưa về A trước khi khóa để khi mở ra dùng nhạc luôn
-        time.sleep(0.2)
-        ctypes.windll.user32.LockWorkStation()
-    elif action == "GO_TO_A":
-        print("🎵 Đã về TẦNG A (Nhạc)"); ser.write(b'A')
-
-def connect_serial():
-    """Hàm kết nối Serial an toàn"""
+def connect():
     try:
-        s = serial.Serial(COM_PORT, BAUD_RATE, timeout=0.1)
+        s = serial.Serial(COM_PORT, BAUD, timeout=0.1)
         s.reset_input_buffer()
         return s
-    except:
-        return None
+    except: return None
 
-# --- KHỞI CHẠY ---
-ser = connect_serial()
-disconnect_start_time = None if ser else time.time()
-current_level = 0; current_mode = "A"
-is_touching = False; touch_start_time = 0; touch_count = 0; last_rel_time = 0; hold_triggered = False
+# --- MAIN LOOP ---
+ser = connect()
+t_start = time.time() if not ser else None
+is_t = False; st_t = 0; count = 0; last_rel = 0; hold_ok = False; cur_m = "A"
 
-print("--- 🚀 Đa tác vụ UIA make by Ẩn ---")
+while True:
+    now = time.time()
+    if ser is None or not ser.is_open:
+        if t_start is None: t_start = now
+        if now - t_start > 30: sys.exit() # Timeout 30s
+        ser = connect()
+        if ser: ser.write(b'A'); t_start = None
+        else: time.sleep(1); continue
 
-try:
-    while True:
-        curr_time = time.time()
+    lvl = 0
+    try:
+        if ser.in_waiting > 0:
+            line = ser.readline().decode('utf-8', errors='ignore').strip()
+            if line.startswith('{'):
+                data = json.loads(line)
+                cur_m, lvl = data.get("M", "A"), data.get("L", 0)
+    except: ser = None; continue
 
-        # 1. QUẢN LÝ KẾT NỐI (RECONNECT & TIMEOUT)
-        if ser is None or not ser.is_open:
-            if disconnect_start_time is None:
-                disconnect_start_time = curr_time
-                print("\n🔌 Mất kết nối! Đang đợi bạn cắm lại dây R3...")
+    # Logic Chạm
+    if lvl >= THRESHOLD[cur_m]:
+        if not is_t: is_t = True; st_t = now; hold_ok = False
+        if not hold_ok and (now - st_t) >= 1.0:
+            trigger(cur_m + "HOLD", ser); hold_ok = True; count = 0
+    else:
+        if is_t:
+            dur = now - st_t
+            is_t = False
+            if not hold_ok and dur > 0.05:
+                count += 1; last_rel = now
+            hold_ok = False
 
-            elapsed = curr_time - disconnect_start_time
-            if elapsed > DISCONNECT_TIMEOUT:
-                print("\n❌ Quá 30s không thấy Arduino. Chương trình tự đóng để bảo vệ tài nguyên.")
-                sys.exit()
-            
-            ser = connect_serial()
-            if ser:
-                print("\n✅ Đã kết nối lại thành công!")
-                ser.write(b'A') # Khởi tạo lại Kênh A
-                disconnect_start_time = None
-            else:
-                time.sleep(1); continue
+    if count > 0 and not is_t and (now - last_rel) > 0.6:
+        tag = "GO_TO_B" if (cur_m=='A' and count>=4) else "GO_TO_A" if (cur_m=='B' and count>=4) else f"{cur_m}{count}"
+        trigger(tag, ser)
+        count = 0; ser.reset_input_buffer()
 
-        # 2. ĐỌC DỮ LIỆU SẠCH (CHỐNG DÍNH LẸO)
-        try:
-            if ser.in_waiting > 0:
-                line = ser.readline().decode('utf-8', errors='ignore').strip()
-                if line.startswith('{') and line.endswith('}'):
-                    data = json.loads(line)
-                    current_mode = data.get("M", "A")
-                    current_level = data.get("L", 0)
-        except:
-            ser.close(); ser = None; continue
-
-        # 3. LOGIC NHẬN DIỆN CHẠM ĐA TẦNG
-        target_threshold = THRESHOLD_B if current_mode == "B" else THRESHOLD_A
-
-        if current_level >= target_threshold:
-            if not is_touching:
-                is_touching = True; touch_start_time = curr_time; hold_triggered = False
-                print(f"☝️  Chạm {current_mode}...")
-            
-            # Xử lý HOLD (Giữ lâu)
-            if not hold_triggered and (curr_time - touch_start_time) >= LONG_PRESS_TIME:
-                trigger_action(f"{current_mode}HOLD", ser)
-                hold_triggered = True; touch_count = 0
-        else:
-            if is_touching:
-                dur = curr_time - touch_start_time
-                is_touching = False
-                # Chỉ tính nhịp đập nếu là nhấp nhả
-                if not hold_triggered and dur > 0.05:
-                    touch_count += 1
-                    last_rel_time = curr_time
-                hold_triggered = False
-                current_level = 0 # Xóa bộ nhớ sau nhấc tay
-
-        # 4. CHỐT LỆNH DỰA TRÊN SỐ LẦN CHẠM
-        if touch_count > 0 and not is_touching:
-            if (curr_time - last_rel_time) > TAP_WINDOW:
-                action_key = f"{current_mode}{touch_count}"
-                # Xử lý các lệnh chuyển vùng
-                if current_mode == "A" and touch_count >= 4: action_key = "GO_TO_B"
-                elif current_mode == "B" and touch_count >= 4: action_key = "GO_TO_A"
-                
-                trigger_action(action_key, ser)
-                touch_count = 0
-                ser.reset_input_buffer()
-
-        time.sleep(0.01)
-
-except KeyboardInterrupt:
-    if ser: ser.close()
-    sys.exit()
+    time.sleep(0.01)
