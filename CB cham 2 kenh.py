@@ -24,7 +24,7 @@
 import serial,json,time,os,pyautogui,subprocess,sys,ctypes
 
 # --- CẤU HÌNH HỆ THỐNG ---
-COM_PORT = 'COM5'
+COM_PORT = 'COM5'# tùy vào COM của bn
 BAUD_RATE = 115200
 THRESHOLD_A = 4000
 THRESHOLD_B = 6000 
